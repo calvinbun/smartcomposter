@@ -1,0 +1,150 @@
+#include <DHT.h>
+#include <LiquidCrystal.h>
+#include <HCSR04.h>
+#include <Servo.h>
+
+// Pin definitions
+const int temphumid = 13;
+const int photoresistor = A0;
+
+const int rs = 2, en = 3, d4 = 4, d5 = 5, d6 = 6, d7 = 7;
+LiquidCrystal lcd(rs, en, d4, d5, d6, d7);
+
+#define DHTTYPE DHT11
+#define DHTPIN 13
+
+byte triggerPin = A1;
+byte echoPin = A2;
+
+DHT dht(DHTPIN, DHTTYPE);
+
+// Motor driver pins
+#define ENABLE 10
+#define DIRA 8
+#define DIRB 9
+
+// Button pins
+int leftButton = A3;
+int rightButton = A4;
+
+// Variables for menu and sensors
+int llevel;  // Light level
+int currentMenuIndex = 0;
+int menuLength = 3;
+
+// Servo setup
+Servo myServo;
+const int servoPin = 11; // Pin for the servo
+
+void setup() {
+  pinMode(ENABLE, OUTPUT);
+  pinMode(DIRA, OUTPUT);
+  pinMode(DIRB, OUTPUT);
+  
+  // Buttons as inputs
+  pinMode(leftButton, INPUT);
+  pinMode(rightButton, INPUT);
+
+  Serial.begin(9600);
+  HCSR04.begin(triggerPin, echoPin);
+  
+  // Initialize LCD and DHT sensor
+  lcd.begin(16, 2);
+  dht.begin();
+  
+  // Attach the servo
+  myServo.attach(servoPin);
+}
+
+void loop() {
+  // Read sensors
+  llevel = analogRead(photoresistor);
+  float f = dht.readTemperature(true);
+  float h = dht.readHumidity();
+  double* distances = HCSR04.measureDistanceCm();
+  float d = distances[0];  // Compost height in cm
+
+  // Motor control based on temperature
+  digitalWrite(ENABLE, HIGH);
+  if (f > 86.0) {
+    digitalWrite(DIRA, HIGH);  // Turn on motor if temp > 86F
+  } else {
+    digitalWrite(DIRA, LOW);   // Turn off motor otherwise
+  }
+
+  // Check humidity and control the servo
+  if (h < 40.0) {
+    myServo.write(0);  // Turn servo to 90 degrees
+    delay(1000);        // Wait for 1 second
+    myServo.write(90);   // Return servo to 0 degrees
+    delay(1000);        // Wait for 1 second
+  }else{
+    myServo.write(0);
+  }
+
+  // Menu navigation using buttons
+  if (analogRead(leftButton) < 512) {  // Left button pressed
+    currentMenuIndex--;
+    if (currentMenuIndex < 0) {
+      currentMenuIndex = menuLength - 1;  // Wrap around to last page
+    }
+    displayMenu(f, h, d, llevel);
+    delay(200);  // Simple debounce delay
+  }
+
+  if (analogRead(rightButton) < 512) {  // Right button pressed
+    currentMenuIndex++;
+    if (currentMenuIndex >= menuLength) {
+      currentMenuIndex = 0;  // Wrap around to first page
+    }
+    displayMenu(f, h, d, llevel);
+    delay(200);  // Simple debounce delay
+  }
+
+  // Display the current menu page
+  displayMenu(f, h, d, llevel);
+}
+
+// Function to display the current menu page
+void displayMenu(float f, float h, float compostHeight, int lightLevel) {
+  lcd.clear();
+  switch (currentMenuIndex) {
+    case 0:
+      // Page 1: Temperature and Humidity
+      lcd.setCursor(0, 0);
+      lcd.print("Temp.: ");
+      lcd.print(f);
+      lcd.print(" F");
+      lcd.setCursor(0, 1);
+      lcd.print("Humidity: ");
+      lcd.print(h);
+      lcd.print(" %");
+
+      delay(10);
+      
+      break;
+
+    case 1:
+      // Page 2: Compost Height
+      lcd.setCursor(0, 0);
+      lcd.print("Compost H.: ");
+      lcd.setCursor(0, 1);
+      lcd.print(compostHeight);
+      lcd.print(" cm");
+
+      delay(10);
+
+      break;
+
+    case 2:
+      // Page 3: Light Level
+      lcd.setCursor(0, 0);
+      lcd.print("Light Level: ");
+      lcd.setCursor(0, 1);
+      lcd.print(lightLevel);
+
+      delay(10);
+      
+      break;
+  }
+}
